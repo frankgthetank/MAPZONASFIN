@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Interactivo</title>
+    <script src="https://cdn.jsdelivr.net/npm/mapbox-gl@2.9.0/dist/mapbox-gl.js"></script>
+    <script>
+        // Hacer una solicitud para obtener la clave de la API desde el servidor
+        fetch('/config')
+            .then(response => response.json())
+            .then(data => {
+                // Inyectar la clave de la API de Google en el script de Maps
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${data.googleApiKey}&libraries=places`;
+                script.async = true;
+                script.defer = true;
+                document.head.appendChild(script);
+            })
+            .catch(error => {
+                console.error('Error al obtener la clave de la API:', error);
+            });
+    </script>
+    
+    <link href="https://cdn.jsdelivr.net/npm/mapbox-gl@2.9.0/dist/mapbox-gl.css" rel="stylesheet">
+    <style>
+        #map { width: 100%; height: 500px; border: 2px solid black; }
+
+           /* Estilo del popup */
+           #popup-alert {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #333;
+            color: #fff;
+            padding: 20px 30px;
+            border-radius: 10px;
+            font-size: 18px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            display: none; /* Oculto inicialmente */
+            z-index: 1000;
+        }
+
+
+        #search-bar {
+        position: absolute; /* Cambiar a absolute para que se posicione correctamente */
+        top: 40px;          /* 10px desde la parte superior */
+        right: 80px;        /* 10px desde la parte derecha */
+        z-index: 1;
+        width: 200px;
+        background-color: white;
+        border-radius: 5px;
+        padding: 5px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+
+
+         /* Estilo para el contenedor */
+         #container {
+            display: flex; /* Usamos flexbox para alinear los elementos en una fila */
+            gap: 10px; /* Espacio entre los elementos */
+            align-items: center; /* Alinea verticalmente al centro */
+        }
+
+        /* Estilo para el textarea */
+        #selected-ids {
+            width: 200px; /* Ajusta el tamaño según lo que necesites */
+            height: 30px;
+            resize: none; /* Evita que el textarea sea redimensionable */
+        }
+
+        /* Estilo para los botones */
+        button {
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+
+    </style>
+</head>
+<body>
+    <h1 align="center">MAPA INTERACTIVO DCE</h1>
+    <div id="search-bar">
+        <input id="autocomplete" type="text" placeholder="Escribe una dirección...">
+    </div>
+   
+    
+    <!-- Botón para guardar -->
+    <div id="container">
+
+         <!-- Lista desplegable de categorías -->
+        <label for="categoria">Calificacion DCE:</label>
+        <select id="categoria">
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+        </select>
+
+        
+        <textarea id="selected-ids" readonly></textarea>
+        
+        <button id="guardar">Guardar</button>
+        <button id="limpiar">Limpiar</button>
+    </div>
+
+    <div id="popup-alert">Guardando...</div>
+    <div id="map"></div>
+    <script>
+        // Inicializar el mapa con Mapbox        
+        mapboxgl.accessToken = process.env.MAPBOX_TOKEN;  // Usar la variable de entorno
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v11',
+            center: [-78.48472337366458, -0.18403848168269704],  // Coordenadas de Quito
+            zoom: 9
+        });
+
+
+         // Google Places Autocomplete
+         let autocomplete;
+        const input = document.getElementById('autocomplete');
+
+        function initAutocomplete() {
+            autocomplete = new google.maps.places.Autocomplete(input, {
+                types: ['geocode'], // Limita la búsqueda a direcciones
+            });
+
+            // Cuando el usuario selecciona una dirección
+            autocomplete.addListener('place_changed', () => {
+                const place = autocomplete.getPlace();
+
+                if (!place.geometry || !place.geometry.location) {
+                    console.error("No se encontró la ubicación seleccionada.");
+                    return;
+                }
+
+                // Obtener latitud y longitud del lugar
+                const lat = place.geometry.location.lat();
+                const lng = place.geometry.location.lng();
+
+                // Centrar el mapa de Mapbox en la ubicación seleccionada
+                map.flyTo({
+                    center: [lng, lat],
+                    zoom: 15
+                });
+            });
+        }
+
+
+        // Inicializar Autocomplete al cargar el script de Google Maps
+        window.onload = initAutocomplete; 
+
+
+        // Un array para almacenar los IDs de los features seleccionados
+        //let selectedFeatures = [];
+
+        // Cargar el archivo GeoJSON (asegurándote de tener la ruta correcta)
+        const selectedIds = [];
+        fetch('static/data_coord.geojson')
+            .then(response => response.json())
+            .then(data => {
+                // Agregar el archivo GeoJSON al mapa
+                map.on('load', () => {
+                    map.addSource('geojson', {
+                        'type': 'geojson',
+                        'data': data
+                    });
+
+                    map.addLayer({
+                        'id': 'features-layer',
+                        'type': 'fill',
+                        'source': 'geojson',
+                        'paint': {
+                        'fill-color': [
+                            'case',
+                            ['in', ['get', 'zon'], ['literal', selectedIds]],
+                            '#000000', // Turquesa para seleccionados
+                            [
+                                'match', ['get', 'categoria'],
+                                'A', '#0509fa', // Azul para A
+                                'B', '#b305fa', // Morado para B
+                                'C', '#fa8705', // Tomate para C
+                                'D', '#fa1b05', // Rojo para D
+                                '#CCCCCC' // Color por defecto
+                            ]
+                        ],
+                        'fill-opacity': 0.2
+                    }
+                    });
+
+                    // Manejar el clic en cada feature para seleccionar los IDs y mostrar el popup
+                    //const selectedIds = [];
+                    const textArea = document.getElementById('selected-ids'); // Cuadro de texto
+                    map.on('click', 'features-layer', (e) => {
+                        const feature = e.features[0];
+                        const id = feature.properties.zon;
+                        const categoria = feature.properties.categoria;
+
+                        // Mostrar el popup con el ID y categoría
+                        new mapboxgl.Popup()
+                            .setLngLat(e.lngLat)
+                            .setHTML(`<strong>ID:</strong> ${id} <br> <strong>Categoría:</strong> ${categoria}`)
+                            .addTo(map);
+
+                        // Agregar el ID a la lista de seleccionados
+                        if (!selectedIds.includes(id)) {
+                            selectedIds.push(id);
+                            console.log(`ID seleccionado: ${id}`);
+                            updateTextArea();
+                        }
+                    
+                    
+                           // Actualizar la visualización
+                            updateFeatureColors();    
+                    
+                    
+                    
+                    });
+
+
+                     // Función para actualizar colores de los "features"
+                        function updateFeatureColors() {
+                            map.setPaintProperty('features-layer', 'fill-color', [
+                                'case',
+                                ['in', ['get', 'zon'], ['literal', selectedIds]],
+                                '#000000', // Amarillo para seleccionados
+                                [
+                                'match', ['get', 'categoria'],
+                                'A', '#0509fa', // Azul para A
+                                'B', '#b305fa', // Morado para B
+                                'C', '#fa8705', // Tomate para C
+                                'D', '#fa1b05', // Rojo para D
+                                '#CCCCCC' // Color por defecto
+                                ]
+                            ]);
+                        }   
+                          
+
+                    
+                       // Mostrar el popup
+                        function showPopup(message) {
+                            const popup = document.getElementById('popup-alert');
+                            popup.textContent = message; // Establecer mensaje
+                            popup.style.display = 'block'; // Mostrar popup
+                        }
+
+                        // Ocultar el popup
+                        function hidePopup() {
+                            const popup = document.getElementById('popup-alert');
+                            popup.style.display = 'none'; // Ocultar popup
+                        }
+
+
+
+
+                    function updateTextArea() {
+                        textArea.value = selectedIds.join('\n');
+                    }
+                    // Al hacer clic en el botón "Guardar", enviar los datos al servidor
+                    document.getElementById('guardar').addEventListener('click', () => {
+                        const selectedCategory = document.getElementById('categoria').value;
+                        showPopup('Guardando...'); // Mostrar el mensaje "Guardando..."
+                       
+                        fetch('/guardar-ids', {
+                            method: 'POST',
+                            body: JSON.stringify({ 
+                                selectedIds: selectedIds, 
+                                categoria: selectedCategory 
+                            }),
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                           
+
+                          
+                                console.log('Datos guardados:', data);
+                           
+                                hidePopup(); // Ocultar el popup tras completar el guardado
+                            // Recargar la página después de guardar
+
+                            location.reload();
+                        })
+                       
+                    });
+
+
+                     // Evento del botón "Limpiar"
+                    document.getElementById('limpiar').addEventListener('click', () => {
+                        selectedIds.length = 0; // Vaciar la lista de IDs
+                        textArea.value = '';   // Limpiar el cuadro de texto
+                        updateFeatureColors();
+                        alert('Lista de IDs limpiada');
+                    });
+
+
+                });
+            })
+            .catch(err => console.error('Error al cargar el archivo GeoJSON:', err));
+
+
+           
+    </script>
+</body>
+</html>
