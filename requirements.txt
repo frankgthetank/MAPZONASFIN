@@ -1,6 +1,6 @@
 geopandas
 requests
-gunicorn==20.1.0
+gunicorn         # Ver ==20.1.0
 fiona
 shapely
 Flask==3.0.3             # Versión estable recomendada de Flask  Flask==3.0.3  2.2.2
