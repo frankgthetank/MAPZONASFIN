@@ -1,9 +1,9 @@
 geopandas
 requests
-gunicorn
+gunicorn==20.1.0
 fiona
 shapely
-Flask==2.2.2             # Versión estable recomendada de Flask  Flask==3.0.3
+Flask==3.0.3             # Versión estable recomendada de Flask  Flask==3.0.3  2.2.2
 google-api-core==2.24.0  # Necesario si usas las APIs de Google
 google-api-python-client==2.154.0  # Necesario si usas las APIs de Google
 google-auth==2.36.0      # Necesario si usas las APIs de Google
